@@ -1,0 +1,160 @@
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer base {
+  :root {
+    --background: #FFFFFF;
+    --foreground: #1A1A1A;
+    --card: #FFFFFF;
+    --card-foreground: #1A1A1A;
+    --popover: #FFFFFF;
+    --popover-foreground: #1A1A1A;
+    --primary: #1B6B3A;
+    --primary-light: #E8F5E9;
+    --primary-foreground: #FFFFFF;
+    --secondary: #F5F5F5;
+    --secondary-foreground: #1A1A1A;
+    --muted: #F5F5F5;
+    --muted-foreground: #757575;
+    --accent: #F57C00;
+    --accent-foreground: #FFFFFF;
+    --danger: #C62828;
+    --destructive: #C62828;
+    --destructive-foreground: #FFFFFF;
+    --surface: #FAFAFA;
+    --border: #E0E0E0;
+    --input: #E0E0E0;
+    --ring: #1B6B3A;
+    --text-primary: #1A1A1A;
+    --text-muted: #757575;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: #121212;
+    --foreground: #FAFAFA;
+    --card: #1E1E1E;
+    --card-foreground: #FAFAFA;
+    --popover: #1E1E1E;
+    --popover-foreground: #FAFAFA;
+    --primary: #2D6B45;
+    --primary-light: #1A3E26;
+    --primary-foreground: #FAFAFA;
+    --secondary: #242424;
+    --secondary-foreground: #FAFAFA;
+    --muted: #242424;
+    --muted-foreground: #A0A0A0;
+    --accent: #E65100;
+    --accent-foreground: #FFFFFF;
+    --danger: #D32F2F;
+    --destructive: #D32F2F;
+    --destructive-foreground: #FAFAFA;
+    --surface: #121212;
+    --border: #2D2D2D;
+    --input: #2D2D2D;
+    --ring: #2D6B45;
+    --text-primary: #FAFAFA;
+    --text-muted: #A0A0A0;
+  }
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  html {
+    @apply font-sans;
+    overflow-x: hidden;
+  }
+
+  /* ─── Mobile UX Polish ─────────────────────── */
+
+  /* Remove 300ms tap delay on all interactive elements */
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  input[type="submit"],
+  input[type="button"],
+  .touch-action-manipulation {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Minimum touch-target sizes for mobile usability */
+  button,
+  [role="button"] {
+    min-height: 44px; /* fallback */
+    min-height: 52px;
+  }
+
+  /* Allow small icon buttons to override via explicit sizing */
+  button[data-size="icon"],
+  button.h-8,
+  button.h-9,
+  button.h-6 {
+    min-height: unset;
+  }
+
+  /* Form field minimum height */
+  input[type="text"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="date"],
+  input[type="url"],
+  textarea,
+  select {
+    min-height: 48px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Allow small inline inputs to opt out (e.g. OTP boxes) */
+  input[data-compact="true"],
+  input.h-12,
+  input.h-14 {
+    min-height: unset;
+  }
+
+  /* Disable autofill styling flash */
+  input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 30px white inset !important;
+  }
+
+  /* Lazy-load images */
+  img {
+    content-visibility: auto;
+  }
+
+  /* iOS safe area bottom padding utility */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Pull-to-refresh: enable native overscroll on scrollable containers */
+  .pull-to-refresh {
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ─── Print Styles ─────────────────────────── */
+@media print {
+  nav[role="tablist"],
+  .fixed.bottom-0 {
+    display: none !important;
+  }
+}
