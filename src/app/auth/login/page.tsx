@@ -2,11 +2,43 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Check, Phone, ArrowLeft } from 'lucide-react';
+
+const DEMO_ACCOUNTS = {
+  '9999999999': {
+    user: {
+      id: 'admin-uuid-9999',
+      role: 'admin',
+      full_name: 'Prashant',
+      operator_id: 'admin',
+    },
+    redirectTo: '/dashboard',
+  },
+  '8888888888': {
+    user: {
+      id: 'worker-uuid-1234',
+      role: 'field_worker',
+      full_name: 'Rajesh Kumar',
+      operator_id: '1234',
+      facility_id: 'facility-uuid-5678',
+      facility_name: 'New Delhi Ward 14 Center',
+      facility_lat: 28.6139,
+      facility_lng: 77.2090,
+      facility_radius: 5000,
+    },
+    redirectTo: '/collect',
+  },
+} as const;
+
+const normalizePhoneNumber = (value: string) => value.replace(/\D/g, '').slice(-10);
+
+const getSupabaseClient = async () => {
+  const { supabase } = await import('@/lib/supabase');
+  return supabase;
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -56,14 +88,93 @@ export default function LoginPage() {
     setToastMessage("No internet. Please try again when connected.");
   };
 
+  const getDemoAccount = (value: string) => {
+    const normalizedPhone = normalizePhoneNumber(value);
+    return DEMO_ACCOUNTS[normalizedPhone as keyof typeof DEMO_ACCOUNTS] ?? null;
+  };
+
+  const applyDemoSession = (value: string) => {
+    const demoAccount = getDemoAccount(value);
+    if (demoAccount) {
+      localStorage.setItem('dmrv-user', JSON.stringify(demoAccount.user));
+      router.replace(demoAccount.redirectTo);
+      return;
+    }
+
+    const normalizedPhone = normalizePhoneNumber(value);
+    localStorage.setItem('dmrv-user', JSON.stringify({
+      id: `worker-uuid-${normalizedPhone}`,
+      role: 'field_worker',
+      full_name: `Worker ${normalizedPhone.slice(-4)}`,
+      operator_id: normalizedPhone.slice(-4),
+      facility_id: 'facility-uuid-5678',
+      facility_name: 'New Delhi Ward 14 Center',
+      facility_lat: 28.6139,
+      facility_lng: 77.2090,
+      facility_radius: 5000,
+    }));
+    router.replace('/collect');
+  };
+
+  const resolveUserProfile = async (authUserId: string, phone: string) => {
+    const supabase = await getSupabaseClient();
+    const digits = phone.replace(/\D/g, '');
+    const fullPhone = digits.length === 10 ? `+91${digits}` : `+${digits}`;
+
+    const { data: profileById, error: profileByIdError } = await supabase
+      .from('users')
+      .select('role, name, id')
+      .eq('id', authUserId)
+      .maybeSingle();
+
+    if (profileById && !profileByIdError) {
+      return profileById;
+    }
+
+    const candidatePhones = [fullPhone, digits];
+    for (const candidate of candidatePhones) {
+      const { data: profileByPhone, error: profileByPhoneError } = await supabase
+        .from('users')
+        .select('role, name, id')
+        .eq('mobile', candidate)
+        .maybeSingle();
+
+      if (profileByPhone && !profileByPhoneError) {
+        return profileByPhone;
+      }
+    }
+
+    const { data: createdProfile, error: createError } = await supabase
+      .from('users')
+      .insert([
+        {
+          id: authUserId,
+          name: `User ${digits.slice(-4) || 'new'}`,
+          mobile: fullPhone,
+          role: 'field_worker',
+          status: 'active',
+        },
+      ])
+      .select('role, name, id')
+      .single();
+
+    if (createError) {
+      throw createError;
+    }
+
+    return createdProfile;
+  };
+
   // Step 1: Submit Phone Number to Supabase Auth OTP
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setInlineError(null);
 
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
     // Validate 10-digit number
-    if (!/^\d{10}$/.test(phoneNumber)) {
+    if (!/^\d{10}$/.test(normalizedPhone)) {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
@@ -71,34 +182,32 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const fullPhone = `+91${phoneNumber}`;
-      const isMockMode = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+      const demoAccount = getDemoAccount(normalizedPhone);
 
-      if (isMockMode) {
-        // Local Demo fallback simulator
-        await new Promise((resolve) => setTimeout(resolve, 800));
+      if (demoAccount) {
+        applyDemoSession(normalizedPhone);
+        return;
+      }
+
+      const fullPhone = `+91${normalizedPhone}`;
+      const supabase = await getSupabaseClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: fullPhone,
+      });
+
+      if (error) {
+        // If offline network failure
+        if (error.message.toLowerCase().includes('fetch') || !navigator.onLine) {
+          triggerNetworkErrorToast();
+        } else {
+          throw error;
+        }
+      } else {
+        setPhoneNumber(normalizedPhone);
         setStep(2);
         setCountdown(30);
         setCanResend(false);
         setOtpValues(Array(6).fill(''));
-      } else {
-        const { error } = await supabase.auth.signInWithOtp({
-          phone: fullPhone,
-        });
-
-        if (error) {
-          // If offline network failure
-          if (error.message.toLowerCase().includes('fetch') || !navigator.onLine) {
-            triggerNetworkErrorToast();
-          } else {
-            throw error;
-          }
-        } else {
-          setStep(2);
-          setCountdown(30);
-          setCanResend(false);
-          setOtpValues(Array(6).fill(''));
-        }
       }
     } catch (err: any) {
       console.error('OTP Send error:', err);
@@ -123,57 +232,22 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const fullPhone = `+91${phoneNumber}`;
-      const isMockMode = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      const fullPhone = `+91${normalizedPhone}`;
+      const demoAccount = getDemoAccount(normalizedPhone);
 
-      if (isMockMode) {
+      if (demoAccount) {
         await new Promise((resolve) => setTimeout(resolve, 800));
 
         // Mock test account validations: OTP is 123456
         if (token === '123456') {
-          if (phoneNumber === '9999999999') {
-            // Admin test account
-            localStorage.setItem('dmrv-user', JSON.stringify({
-              id: 'admin-uuid-9999',
-              role: 'admin',
-              full_name: 'Prashant',
-              operator_id: 'admin',
-            }));
-            router.push('/dashboard');
-          } else if (phoneNumber === '8888888888') {
-            // Worker test account
-            localStorage.setItem('dmrv-user', JSON.stringify({
-              id: 'worker-uuid-1234',
-              role: 'field_worker',
-              full_name: 'Rajesh Kumar',
-              operator_id: '1234',
-              facility_id: 'facility-uuid-5678',
-              facility_name: 'New Delhi Ward 14 Center',
-              facility_lat: 28.6139,
-              facility_lng: 77.2090,
-              facility_radius: 5000,
-            }));
-            router.push('/collect');
-          } else {
-            // Fallback worker profile
-            localStorage.setItem('dmrv-user', JSON.stringify({
-              id: `worker-uuid-${phoneNumber}`,
-              role: 'field_worker',
-              full_name: `Worker ${phoneNumber.slice(-4)}`,
-              operator_id: phoneNumber.slice(-4),
-              facility_id: 'facility-uuid-5678',
-              facility_name: 'New Delhi Ward 14 Center',
-              facility_lat: 28.6139,
-              facility_lng: 77.2090,
-              facility_radius: 5000,
-            }));
-            router.push('/collect');
-          }
+          applyDemoSession(normalizedPhone);
         } else {
           setInlineError('Invalid OTP. Use 123456 for testing.');
         }
       } else {
         // Real Supabase Auth verification
+        const supabase = await getSupabaseClient();
         const { data, error } = await supabase.auth.verifyOtp({
           phone: fullPhone,
           token,
@@ -187,29 +261,24 @@ export default function LoginPage() {
             setInlineError('Invalid OTP. Please try again.');
           }
         } else if (data.user) {
-          // Fetch role from public.users table
-          const { data: profile, error: profileError } = await supabase
-            .from('users')
-            .select('role, name')
-            .eq('id', data.user.id)
-            .single();
+          try {
+            const profile = await resolveUserProfile(data.user.id, normalizedPhone);
 
-          if (profileError || !profile) {
-            console.error('Error fetching user profile:', profileError);
-            setErrorMessage('Profile not found. Contact administrator.');
-          } else {
             localStorage.setItem('dmrv-user', JSON.stringify({
-              id: data.user.id,
+              id: profile.id,
               role: profile.role,
               full_name: profile.name,
               operator_id: data.user.phone || '',
             }));
 
             if (profile.role === 'admin') {
-              router.push('/dashboard');
+              router.replace('/dashboard');
             } else {
-              router.push('/collect');
+              router.replace('/collect');
             }
+          } catch (profileError: any) {
+            console.error('Error fetching user profile:', profileError);
+            setErrorMessage('Profile not found. Contact administrator.');
           }
         }
       }
@@ -230,10 +299,12 @@ export default function LoginPage() {
     setOtpValues(Array(6).fill(''));
 
     try {
-      const fullPhone = `+91${phoneNumber}`;
-      const isMockMode = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder-project');
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      const fullPhone = `+91${normalizedPhone}`;
+      const demoAccount = getDemoAccount(normalizedPhone);
 
-      if (!isMockMode) {
+      if (!demoAccount) {
+        const supabase = await getSupabaseClient();
         const { error } = await supabase.auth.signInWithOtp({ phone: fullPhone });
         if (error && (!navigator.onLine || error.message.toLowerCase().includes('fetch'))) {
           triggerNetworkErrorToast();
